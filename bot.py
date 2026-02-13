@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-# Telegram File Sharing Bot - FINAL WORKING VERSION
-# Fixed all issues: Owner ID, Channel ID, Bot self-messages
+# Telegram File Sharing Bot - CLEAN & PROFESSIONAL
+# All bugs fixed: No duplicate messages, clean interface
 
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -11,17 +11,13 @@ import datetime, hashlib, os, requests
 API_ID = 37067823
 API_HASH = "ed9e62ed4538d2d2b835fb54529c358f"
 BOT_TOKEN = "8214501704:AAE7kuiVAqDuID8KRzKTDTSDlBd0MseYCF0"
-CHANNEL_ID = -1003777551559  # Storage channel
-OWNER_ID = 6549083920  # Ajeet's User ID
+CHANNEL_ID = -1003777551559
+OWNER_ID = 6549083920
 MONGO_URL = "mongodb+srv://Ajeet:XgGFRFWVT2NwWipw@cluster0.3lxz0p7.mongodb.net/?appName=Cluster0"
 SHORTENER_API = "5cbb1b2088d2ed06d7e9feae35dc17cc033169d6"
 SHORTENER_URL = "https://vplink.in"
 
-print("=" * 50)
-print("🤖 BOT STARTING...")
-print(f"👑 Owner ID: {OWNER_ID}")
-print(f"📁 Channel ID: {CHANNEL_ID}")
-print("=" * 50)
+print("🤖 Bot starting...")
 
 # ========== DATABASE ==========
 try:
@@ -29,7 +25,7 @@ try:
     db = mongo['filebot']
     users = db['users']
     files = db['files']
-    print("✅ Database connected!")
+    print("✅ Database connected")
 except Exception as e:
     print(f"❌ Database error: {e}")
 
@@ -56,11 +52,11 @@ def shorten(url):
 async def start(c, m):
     uid = m.from_user.id
     
-    # IGNORE BOT'S OWN MESSAGES
-    if uid == 8214501704:  # Bot's ID (from token)
-        print("🤖 Ignoring bot's own message")
+    # IGNORE BOT'S OWN MESSAGES COMPLETELY
+    if uid == 8214501704:
         return
     
+    # Add user to database
     if not users.find_one({"user_id": uid}):
         users.insert_one({
             "user_id": uid,
@@ -69,96 +65,102 @@ async def start(c, m):
             "verified_at": None,
             "joined_at": datetime.datetime.now()
         })
-        print(f"📝 New user: {uid}")
     
+    # Check if file request
     if len(m.text.split()) > 1:
         code = m.text.split()[1]
         
+        # Verification callback
         if code.startswith("verify_"):
             users.update_one({"user_id": uid}, {"$set": {"verified_at": datetime.datetime.now()}})
-            await m.reply("✅ **Verified!**\n\n🎉 48 hours access activated!")
-            return
-        
-        if not verified(uid):
-            bot_username = (await c.get_me()).username
-            link = shorten(f"https://t.me/{bot_username}?start=verify_{uid}")
             await m.reply(
-                f"🔒 **Verify Required!**\n\n🔗 {link}\n\n⏰ 48hr access!",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔓 Verify", url=link)]])
+                "🎉 **Verification Successful!**\n\n"
+                "✅ You now have **48 hours** of unlimited access!\n\n"
+                "📁 You can download all files without any restrictions.\n"
+                "⏰ Access will expire after 48 hours."
             )
             return
         
+        # File download request
+        if not verified(uid):
+            bot_username = (await c.get_me()).username
+            link = shorten(f"https://t.me/{bot_username}?start=verify_{uid}")
+            
+            await m.reply(
+                "🔒 **Verification Required**\n\n"
+                "To access files, please verify first.\n\n"
+                f"🔗 **Click below to verify:**",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✅ Verify Now", url=link)
+                ]])
+            )
+            return
+        
+        # User verified, send file
         f = files.find_one({"file_id": code})
         if not f:
-            await m.reply("❌ File not found!")
+            await m.reply("❌ **File Not Found**\n\nThis link may be expired or invalid.")
             return
         
         try:
             await c.copy_message(m.chat.id, CHANNEL_ID, f['message_id'])
             files.update_one({"file_id": code}, {"$inc": {"downloads": 1}})
-            await m.reply("✅ File sent!")
+            # NO EXTRA MESSAGE - file itself is enough
         except Exception as e:
-            await m.reply(f"❌ Error: {e}")
+            await m.reply(f"❌ **Error:** {str(e)}")
+    
     else:
+        # Welcome message
         await m.reply(
             f"👋 **Welcome {m.from_user.first_name}!**\n\n"
-            f"🤖 File Sharing Bot\n\n"
-            f"📁 Admin uploads → Get link\n"
-            f"🔗 Users verify → Download\n\n"
-            f"❓ /help"
+            "🤖 **FileShare Bot**\n\n"
+            "📌 **Features:**\n"
+            "• Fast file downloads\n"
+            "• One-time verification\n"
+            "• 48-hour access\n"
+            "• Secure & reliable\n\n"
+            "📁 **How to use:**\n"
+            "1. Get a file link\n"
+            "2. Verify once (free)\n"
+            "3. Download instantly!\n\n"
+            "❓ Need help? Use /help"
         )
 
 @app.on_message(filters.command("stats") & filters.private)
 async def stats(c, m):
     uid = m.from_user.id
     
-    # IGNORE BOT'S OWN MESSAGES
-    if uid == 8214501704:
-        return
-    
     if uid != OWNER_ID:
-        await m.reply(f"❌ Admin only!\n\nYour ID: `{uid}`\nOwner: `{OWNER_ID}`")
-        return
+        return  # Silent ignore for non-owners
     
     total = users.count_documents({})
     ver = users.count_documents({"verified_at": {"$ne": None}})
     fil = files.count_documents({})
     
-    await m.reply(f"📊 **Stats**\n\n👥 Users: {total}\n✅ Verified: {ver}\n📁 Files: {fil}")
+    await m.reply(
+        f"📊 **Bot Statistics**\n\n"
+        f"👥 Total Users: `{total}`\n"
+        f"✅ Verified Users: `{ver}`\n"
+        f"📁 Total Files: `{fil}`\n\n"
+        f"⚡ Status: **Active**"
+    )
 
 @app.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private)
 async def upload(c, m):
     uid = m.from_user.id
     
-    # CRITICAL FIX: IGNORE BOT'S OWN MESSAGES
-    if uid == 8214501704:  # Bot ka ID (token se)
-        print("🤖 Bot tried to upload file - ignoring")
+    # CRITICAL: IGNORE BOT'S OWN MESSAGES
+    if uid == 8214501704:
         return
     
-    print(f"📤 Upload by: {uid} (Owner: {OWNER_ID})")
-    
-    # Check if user is owner
+    # Check if owner
     if uid != OWNER_ID:
-        await m.reply(
-            f"❌ **Access Denied!**\n\n"
-            f"📛 Your ID: `{uid}`\n"
-            f"👑 Owner ID: `{OWNER_ID}`\n\n"
-            f"Only bot owner can upload files."
-        )
+        # Silent ignore for non-owners
         return
     
-    # Owner confirmed
-    await m.reply("⏳ Uploading...")
-    
+    # Owner confirmed - upload file
     try:
-        # Test channel connection first
-        print(f"📁 Testing channel: {CHANNEL_ID}")
-        
-        # Forward to channel
         fwd = await m.forward(CHANNEL_ID)
-        print(f"✅ Forwarded to channel, Message ID: {fwd.id}")
-        
-        # Generate file ID
         fid = gen_id()
         
         # Get file info
@@ -200,106 +202,72 @@ async def upload(c, m):
             size = f"{fsize} B"
         
         await m.reply(
-            f"✅ **Uploaded!**\n\n"
+            f"✅ **File Uploaded Successfully!**\n\n"
             f"📁 **File:** `{fname}`\n"
             f"📊 **Size:** `{size}`\n"
             f"🆔 **ID:** `{fid}`\n\n"
-            f"🔗 **Link:**\n`{link}`\n\n"
-            f"📤 Share with users!",
+            f"🔗 **Share Link:**\n`{link}`\n\n"
+            f"📤 Share this link with users!",
             quote=True
         )
         
-        print(f"✅ Upload success: {fid}")
-        
     except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Upload error: {error_msg}")
-        
-        if "Peer id invalid" in error_msg or "CHANNEL_INVALID" in error_msg:
-            await m.reply(
-                f"❌ **Channel Error!**\n\n"
-                f"Channel ID: `{CHANNEL_ID}`\n\n"
-                f"**Please check:**\n"
-                f"1. Bot is ADMIN in the channel\n"
-                f"2. Channel ID is correct\n"
-                f"3. Channel is PRIVATE\n"
-                f"4. Bot has all permissions\n\n"
-                f"**Fix:**\n"
-                f"• Go to channel settings\n"
-                f"• Add bot as ADMIN\n"
-                f"• Give ALL permissions\n"
-                f"• Try again!"
-            )
-        else:
-            await m.reply(f"❌ **Error:** `{error_msg}`")
+        await m.reply(
+            f"❌ **Upload Failed**\n\n"
+            f"Error: `{str(e)}`\n\n"
+            f"Please check:\n"
+            f"• Bot is admin in channel\n"
+            f"• Channel exists\n"
+            f"• Database is connected"
+        )
 
 @app.on_message(filters.command("help") & filters.private)
 async def help_cmd(c, m):
     uid = m.from_user.id
     
-    # IGNORE BOT'S OWN MESSAGES
-    if uid == 8214501704:
-        return
-    
     if uid == OWNER_ID:
-        txt = "📖 **Admin Help**\n\n• Send file → Get link\n• /stats → Statistics\n• Share links with users!"
+        txt = (
+            "👑 **Admin Help**\n\n"
+            "**Commands:**\n"
+            "• Send any file → Get shareable link\n"
+            "• /stats → View bot statistics\n\n"
+            "**How it works:**\n"
+            "1. You upload files\n"
+            "2. Get shareable links\n"
+            "3. Users verify once\n"
+            "4. They get 48-hour access\n\n"
+            "**Earnings:** Check VPLink dashboard!"
+        )
     else:
-        txt = "📖 **Help**\n\n• Click link → Verify → Download\n• 48hr access after verification!"
+        txt = (
+            "📖 **User Guide**\n\n"
+            "**How to download files:**\n"
+            "1. Click on file link\n"
+            "2. Complete one-time verification\n"
+            "3. Enjoy 48 hours of unlimited downloads!\n\n"
+            "**Why verification?**\n"
+            "• Keeps the bot free for everyone\n"
+            "• One-time process for 48 hours\n"
+            "• Quick & simple\n\n"
+            "**Need support?** Contact the bot admin."
+        )
+    
     await m.reply(txt)
 
-@app.on_message(filters.command("test") & filters.private)
-async def test(c, m):
-    """Test channel connection"""
-    uid = m.from_user.id
-    
-    if uid != OWNER_ID:
-        return
-    
-    try:
-        # Try to get channel info
-        chat = await c.get_chat(CHANNEL_ID)
-        await m.reply(
-            f"✅ **Channel Connected!**\n\n"
-            f"📛 Name: {chat.title}\n"
-            f"🆔 ID: {chat.id}\n"
-            f"👥 Type: {chat.type}\n\n"
-            f"Bot status: Connected ✓"
-        )
-    except Exception as e:
-        await m.reply(
-            f"❌ **Channel Error!**\n\n"
-            f"Error: `{e}`\n\n"
-            f"**Possible issues:**\n"
-            f"1. Bot not admin in channel\n"
-            f"2. Channel ID wrong\n"
-            f"3. Channel deleted\n\n"
-            f"**Fix:**\n"
-            f"1. Add bot as ADMIN in channel\n"
-            f"2. Check channel ID\n"
-            f"3. Make sure channel exists"
-        )
-
-@app.on_message(filters.command("fix") & filters.private)
-async def fix_cmd(c, m):
-    """Force fix owner issue"""
-    uid = m.from_user.id
-    
-    if uid == OWNER_ID:
-        # Force add as verified
-        users.update_one({"user_id": uid}, {"$set": {"verified_at": datetime.datetime.now()}}, upsert=True)
-        await m.reply(
-            f"✅ **Owner Force Fixed!**\n\n"
-            f"👑 Your ID: `{uid}`\n"
-            f"✅ Now you can upload files!\n\n"
-            f"Try sending a file now!"
-        )
-    else:
-        await m.reply("❌ Only owner can use this!")
+@app.on_message(filters.command("about") & filters.private)
+async def about(c, m):
+    await m.reply(
+        "🤖 **FileShare Bot**\n\n"
+        "A fast and secure file sharing bot with VPLink monetization.\n\n"
+        "**Features:**\n"
+        "• Large file support\n"
+        "• One-time verification\n"
+        "• 48-hour access\n"
+        "• Secure downloads\n\n"
+        "Made with ❤️ for Telegram users!"
+    )
 
 # ========== START BOT ==========
 print("🚀 Starting bot...")
-try:
-    app.run()
-    print("✅ Bot running!")
-except Exception as e:
-    print(f"❌ Bot failed: {e}")
+app.run()
+print("✅ Bot running!")
